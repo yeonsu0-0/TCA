@@ -67,7 +67,13 @@ struct ContentView: View {
                 NavigationLink(destination: CounterView(state: self.state)) {
                     Text("Counter demo")
                 }
-                NavigationLink(destination: FavoritePrimes(state: self.state)) {
+                NavigationLink(
+                    destination: FavoritePrimesView(
+                        state: self.state,
+                        favoritePrimes: self.$state.favoritePrimes,
+                        activityFeed: self.$state.activityFeed
+                    )
+                ) {
                     Text("Favorite primes")
                 }
             }
@@ -209,7 +215,7 @@ struct IsPrimeModalView: View {
 
 
 
-struct FavoritePrimes: View {
+struct FavoritePrimesView: View {
     @ObservedObject var state: AppState
     @Binding var favoritePrimes: [Int]
     @Binding var activityFeed: [AppState.Activity]
