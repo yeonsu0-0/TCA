@@ -47,7 +47,6 @@ final class Store<Value, Action>: ObservableObject {
     func send(_ action: Action) {
         self.reducer(&self.value, action)
     }
-    
 }
 // Store<AppState>
 // AppState에 변경이 발생하는 즉시 무언가 변경되었음을 알려주는 객체
@@ -73,26 +72,134 @@ enum AppAction {
 }
 
 
-func appReducer(state: inout AppState, action: AppAction) -> Void {
-    switch action {
-    case .counter(.decrementTapped):
-        state.count -= 1
-    case .counter(.incrementTapped):
-        state.count += 1
-    case .primeModal(.saveFavoritePrimeTapped):
-        state.favoritePrimes.append(state.count)
-        state.activityFeed.append(.init(timestamp: Date(), type: .addedFavoritePrime(state.count)))
-    case .primeModal(.removeFavoritePrimeTapped):
-        state.favoritePrimes.removeAll(where: { $0 == state.count })
-        state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.count)))
-    case let .favoritePrimes(.deleteFavoritePrimes(indexSet)):
-        for index in indexSet {
-          let prime = state.favoritePrimes[index]
-          state.favoritePrimes.remove(at: index)
-          state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(prime)))
+
+//func appReducer(state: inout AppState, action: AppAction) -> Void {
+//    switch action {
+//    case .counter(.decrementTapped):
+//        state.count -= 1
+//    case .counter(.incrementTapped):
+//        state.count += 1
+//    case .primeModal(.saveFavoritePrimeTapped):
+//        state.favoritePrimes.append(state.count)
+//        state.activityFeed.append(.init(timestamp: Date(), type: .addedFavoritePrime(state.count)))
+//    case .primeModal(.removeFavoritePrimeTapped):
+//        state.favoritePrimes.removeAll(where: { $0 == state.count })
+//        state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.count)))
+//    case let .favoritePrimes(.deleteFavoritePrimes(indexSet)):
+//        for index in indexSet {
+//          let prime = state.favoritePrimes[index]
+//          state.favoritePrimes.remove(at: index)
+//          state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(prime)))
+//        }
+//    }
+//}
+
+
+// appReducer 분리
+
+// func counterReducer(state: inout AppState, action: AppAction) -> Void {
+// state: inout AppState와 같이 전체 상태를 가져올 필요 없음
+func counterReducer(state: inout Int, action: AppAction) -> Void {
+  switch action {
+  case .counter(.decrementTapped):
+    // state.count -= 1
+      state -= 1
+
+  case .counter(.incrementTapped):
+    state += 1
+
+  default:
+    break
+  }
+}
+
+func primeModalReducer(state: inout AppState, action: AppAction) -> Void {
+  switch action {
+  case .primeModal(.saveFavoritePrimeTapped):
+    state.favoritePrimes.append(state.count)
+    state.activityFeed.append(.init(timestamp: Date(), type: .addedFavoritePrime(state.count)))
+
+  case .primeModal(.removeFavoritePrimeTapped):
+    state.favoritePrimes.removeAll(where: { $0 == state.count })
+    state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.count)))
+
+  default:
+    break
+  }
+}
+
+
+struct FavoritePrimesState {
+    var favoritePrimes: [Int]
+    var activityFeed: [AppState.Activity]
+}
+
+
+func favoritePrimesReducer(state: inout FavoritePrimesState, action: AppAction) -> Void {
+  switch action {
+  case let .favoritePrimes(.deleteFavoritePrimes(indexSet)):
+    for index in indexSet {
+      state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.favoritePrimes[index])))
+      state.favoritePrimes.remove(at: index)
+    }
+
+  default:
+    break
+  }
+}
+
+
+func combine<Value, Action>(
+    _ reducers: (inout Value, Action) -> Void...
+) -> (inout Value, Action) -> Void {
+    
+    return { value, action in
+        for reducer in reducers {
+            reducer(&value, action)
         }
     }
 }
+
+
+// pullback 정의
+func pullback<LocalValue, GlobalValue, Action>(
+    _ reducer: @escaping (inout LocalValue, Action) -> Void,
+    // _ f: @escaping (GlobalValue) -> LocalValue  // LocalValue와 GlobalValue 제네릭 연결
+    // get: @escaping (GlobalValue) -> LocalValue,
+    // set: @escaping (inout GlobalValue, LocalValue) -> Void
+    value: WritableKeyPath<GlobalValue, LocalValue>     // get, set KeyPath
+) -> (inout GlobalValue, Action) -> Void {
+    
+    return { globalValue, action in
+        // var localValue = get(globalValue)
+        reducer(&globalValue[keyPath: value], action)
+        // set(&globalValue, localValue)
+    }
+}
+
+
+extension AppState {
+    var favoritePrimesState: FavoritePrimesState {
+        get {
+            return FavoritePrimesState(favoritePrimes: self.favoritePrimes, activityFeed: self.activityFeed)
+        }
+        set {
+            self.activityFeed = newValue.activityFeed
+            self.favoritePrimes = newValue.favoritePrimes
+        }
+    }
+}
+
+
+let _appReducer = combine(
+    pullback(counterReducer, value: \.count),
+    primeModalReducer,
+    pullback(favoritePrimesReducer, value: \.favoritePrimesState)
+)
+
+let appReducer = pullback(_appReducer, value: \.self)
+
+
 
 // let state = AppState()
 // print(counterReducer(state: state, action: .incrementTapped))
