@@ -69,7 +69,47 @@ enum AppAction {
     case counter(CounterAction)
     case primeModal(PrimeModalAction)
     case favoritePrimes(FavoritePrimesAction)
+    
+    // enum properties
+    // 프로퍼티를 사용하는 경우 AppAction 열거형에 있는 모든 케이스의 관련 데이터에 대한 인스턴스 액세스 가능
+    var counter: CounterAction? {
+        get {
+            guard case let .counter(value) = self else { return nil }
+            return value
+        }
+        set {
+            guard case .counter = self, let newValue = newValue else { return }
+            self = .counter(newValue)
+          }
+    }
+    var primeModal: PrimeModalAction? {
+        get {
+            guard case let .primeModal(value) = self else { return nil }
+            return value
+        }
+        set {
+            guard case .primeModal = self, let newValue = newValue else { return }
+            self = .primeModal(newValue)
+        }
+    }
+    var favoritePrimes: FavoritePrimesAction? {
+        get {
+            guard case let .favoritePrimes(value) = self else { return nil }
+            return value
+        }
+        set {
+            guard case .favoritePrimes = self, let newValue = newValue else { return }
+            self = .favoritePrimes(newValue)
+        }
+    }
 }
+
+let someAction = AppAction.counter(.incrementTapped)
+someAction.counter  // Optional(incrememtTapped)
+someAction.favoritePrimes   // nil
+
+// 각 열거형 케이스에 대한 key path를 얻을 수 있다
+\AppAction.counter  // WritableKeyPath<AppAction, CounterAction?>
 
 
 
@@ -99,33 +139,31 @@ enum AppAction {
 
 // func counterReducer(state: inout AppState, action: AppAction) -> Void {
 // state: inout AppState와 같이 전체 상태를 가져올 필요 없음
-func counterReducer(state: inout Int, action: AppAction) -> Void {
-  switch action {
-  case .counter(.decrementTapped):
-    // state.count -= 1
-      state -= 1
 
-  case .counter(.incrementTapped):
-    state += 1
+// 만약 CounterAction 열거형에 새로운 액션을 추가하는 경우 default문 때문에 컴파일러 오류가 발생하지 않고, reducer에 해당하는 액션이 자동으로 무시됨 -> .counter 액션을 먼저 추출, action: AppAction -> CounterAction)
 
-  default:
-    break
-  }
+func counterReducer(state: inout Int, action: CounterAction) -> Void {
+    switch action {
+    case .decrementTapped:
+        state -= 1
+        
+    case .incrementTapped:
+        state += 1
+    }
 }
 
-func primeModalReducer(state: inout AppState, action: AppAction) -> Void {
-  switch action {
-  case .primeModal(.saveFavoritePrimeTapped):
-    state.favoritePrimes.append(state.count)
-    state.activityFeed.append(.init(timestamp: Date(), type: .addedFavoritePrime(state.count)))
 
-  case .primeModal(.removeFavoritePrimeTapped):
-    state.favoritePrimes.removeAll(where: { $0 == state.count })
-    state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.count)))
 
-  default:
-    break
-  }
+func primeModalReducer(state: inout AppState, action: PrimeModalAction) -> Void {
+    switch action {
+    case .saveFavoritePrimeTapped:
+        state.favoritePrimes.append(state.count)
+        state.activityFeed.append(.init(timestamp: Date(), type: .addedFavoritePrime(state.count)))
+        
+    case .removeFavoritePrimeTapped:
+        state.favoritePrimes.removeAll(where: { $0 == state.count })
+        state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.count)))
+    }
 }
 
 
@@ -135,17 +173,14 @@ struct FavoritePrimesState {
 }
 
 
-func favoritePrimesReducer(state: inout FavoritePrimesState, action: AppAction) -> Void {
-  switch action {
-  case let .favoritePrimes(.deleteFavoritePrimes(indexSet)):
-    for index in indexSet {
-      state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.favoritePrimes[index])))
-      state.favoritePrimes.remove(at: index)
+func favoritePrimesReducer(state: inout FavoritePrimesState, action: FavoritePrimesAction) -> Void {
+    switch action {
+    case let .deleteFavoritePrimes(indexSet):
+        for index in indexSet {
+            state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.favoritePrimes[index])))
+            state.favoritePrimes.remove(at: index)
+        }
     }
-
-  default:
-    break
-  }
 }
 
 
@@ -162,6 +197,7 @@ func combine<Value, Action>(
 
 
 // pullback 정의
+/* =========== < Before action pullback > ===========
 func pullback<LocalValue, GlobalValue, Action>(
     _ reducer: @escaping (inout LocalValue, Action) -> Void,
     // _ f: @escaping (GlobalValue) -> LocalValue  // LocalValue와 GlobalValue 제네릭 연결
@@ -176,7 +212,21 @@ func pullback<LocalValue, GlobalValue, Action>(
         // set(&globalValue, localValue)
     }
 }
+*/
 
+/* =========== < After action pullback > =========== */
+// Global action이 들어올 때 key path를 사용하여 Local Action을 추출하려고 시도
+// -> 성공: reducer로 전달, 실패: 아무것도 안 함
+func pullback<GlobalValue, LocalValue, GlobalAction, LocalAction>(
+    _ reducer: @escaping (inout LocalValue, LocalAction) -> Void,
+    value: WritableKeyPath<GlobalValue, LocalValue>,
+    action: WritableKeyPath<GlobalAction, LocalAction?>
+) -> (inout GlobalValue, GlobalAction) -> Void {
+    return { globalValue, globalAction in
+        guard let localAction = globalAction[keyPath: action] else { return }
+        reducer(&globalValue[keyPath: value], localAction)
+    }
+}
 
 extension AppState {
     var favoritePrimesState: FavoritePrimesState {
@@ -191,13 +241,36 @@ extension AppState {
 }
 
 
-let _appReducer = combine(
-    pullback(counterReducer, value: \.count),
-    primeModalReducer,
-    pullback(favoritePrimesReducer, value: \.favoritePrimesState)
-)
+// 열거형에서의 keyPath 개념(컴파일러에서 자동 제공X, 비슷한 개념)
+// key path의 핵심은 루트에서 값을 가져오는(get) 수단을 제공하고, 루트 내부에 값을 설정하여(set) 변경된 새로운 루트를 제공한다.
+// 일부 열거형 유형의 경우 값을 가져와 열거형의 케이스 중 하나에 포함시키거나 열거형의 값을 가져와 케이스 중 하나에서 관련된 데이터를 추출할 수 있다.
+struct EnumKeyPath<Root, Value> {
+  let embed: (Value) -> Root
+  let extract: (Root) -> Value?
+}
 
-let appReducer = pullback(_appReducer, value: \.self)
+// \AppAction.counter // EnumKeyPath<AppAction, CounterAction>
+
+// 예를 들어 AppAction 열거형에서 케이스의 연관 데이터에서 값을 가져와서 열거형에 붙일 수 있다.
+AppAction.counter(CounterAction.incrementTapped)    // setter
+
+// getter (열거형 값을 가져와서 특정 케이스의 값을 추출할 수 있다)
+let action = AppAction.favoritePrimes(.deleteFavoritePrimes([1]))
+let favoritePrimesAction: FavoritePrimesAction?
+switch action {
+case let .favoritePrimes(action):
+  favoritePrimesAction = action
+default:
+  favoritePrimesAction = nil
+}
+
+
+let _appReducer: (inout AppState, AppAction) -> Void = combine(
+    pullback(counterReducer, value: \.count, action: \.counter),
+    pullback(primeModalReducer, value: \.self, action: \.primeModal),
+    pullback(favoritePrimesReducer, value: \.favoritePrimesState, action: \.favoritePrimes)
+)
+let appReducer = pullback(_appReducer, value: \.self, action: \.self)
 
 
 
