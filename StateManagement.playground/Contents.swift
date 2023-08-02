@@ -33,6 +33,19 @@ struct AppState {
 }
 
 
+func logging<Value, Action>(
+  _ reducer: @escaping (inout Value, Action) -> Void
+) -> (inout Value, Action) -> Void {
+  return { value, action in
+    reducer(&value, action)
+    print("Action: \(action)")
+    print("State:")
+    dump(value)
+    print("---")
+  }
+}
+
+
 // Store 클래스의 역할: 값 유형을 래핑해서 관찰자에게 훅 제공
 // AppState에 대해서는 알 필요가 없기 떄문에 제네릭 타입으로 선언
 final class Store<Value, Action>: ObservableObject {
@@ -46,6 +59,10 @@ final class Store<Value, Action>: ObservableObject {
     
     func send(_ action: Action) {
         self.reducer(&self.value, action)
+        print("Action: \(action)")
+        print("Value:")
+        dump(self.value)
+        print("---")
     }
 }
 // Store<AppState>
@@ -158,27 +175,24 @@ func primeModalReducer(state: inout AppState, action: PrimeModalAction) -> Void 
     switch action {
     case .saveFavoritePrimeTapped:
         state.favoritePrimes.append(state.count)
-        state.activityFeed.append(.init(timestamp: Date(), type: .addedFavoritePrime(state.count)))
         
     case .removeFavoritePrimeTapped:
         state.favoritePrimes.removeAll(where: { $0 == state.count })
-        state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.count)))
     }
 }
 
 
-struct FavoritePrimesState {
-    var favoritePrimes: [Int]
-    var activityFeed: [AppState.Activity]
-}
+//struct FavoritePrimesState {
+//    var favoritePrimes: [Int]
+//    var activityFeed: [AppState.Activity]
+//}
 
 
-func favoritePrimesReducer(state: inout FavoritePrimesState, action: FavoritePrimesAction) -> Void {
+func favoritePrimesReducer(state: inout [Int], action: FavoritePrimesAction) {
     switch action {
     case let .deleteFavoritePrimes(indexSet):
         for index in indexSet {
-            state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.favoritePrimes[index])))
-            state.favoritePrimes.remove(at: index)
+            state.remove(at: index)
         }
     }
 }
@@ -228,17 +242,17 @@ func pullback<GlobalValue, LocalValue, GlobalAction, LocalAction>(
     }
 }
 
-extension AppState {
-    var favoritePrimesState: FavoritePrimesState {
-        get {
-            return FavoritePrimesState(favoritePrimes: self.favoritePrimes, activityFeed: self.activityFeed)
-        }
-        set {
-            self.activityFeed = newValue.activityFeed
-            self.favoritePrimes = newValue.favoritePrimes
-        }
-    }
-}
+//extension AppState {
+//    var favoritePrimesState: FavoritePrimesState {
+//        get {
+//            return FavoritePrimesState(favoritePrimes: self.favoritePrimes, activityFeed: self.activityFeed)
+//        }
+//        set {
+//            self.activityFeed = newValue.activityFeed
+//            self.favoritePrimes = newValue.favoritePrimes
+//        }
+//    }
+//}
 
 
 // 열거형에서의 keyPath 개념(컴파일러에서 자동 제공X, 비슷한 개념)
@@ -265,10 +279,35 @@ default:
 }
 
 
+func activityFeed(
+    _ reducer: @escaping (inout AppState, AppAction) -> Void
+) -> (inout AppState, AppAction) -> Void {
+    
+    return { state, action in
+        switch action {
+        case .counter(_):
+            break
+            
+        case .primeModal(.removeFavoritePrimeTapped):
+            state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.count)))
+            
+        case .primeModal(.saveFavoritePrimeTapped):
+            state.activityFeed.append(.init(timestamp: Date(), type: .addedFavoritePrime(state.count)))
+            
+        case let .favoritePrimes(.deleteFavoritePrimes(indexSet)):
+            for index in indexSet {
+                state.activityFeed.append(.init(timestamp: Date(), type: .removedFavoritePrime(state.favoritePrimes[index])))
+            }
+        }
+        reducer(&state, action)
+    }
+}
+
+
 let _appReducer: (inout AppState, AppAction) -> Void = combine(
     pullback(counterReducer, value: \.count, action: \.counter),
     pullback(primeModalReducer, value: \.self, action: \.primeModal),
-    pullback(favoritePrimesReducer, value: \.favoritePrimesState, action: \.favoritePrimes)
+    pullback(favoritePrimesReducer, value: \.favoritePrimes, action: \.favoritePrimes)
 )
 let appReducer = pullback(_appReducer, value: \.self, action: \.self)
 
@@ -507,4 +546,4 @@ extension AppState {
     }
 }
 
-PlaygroundPage.current.liveView = UIHostingController(rootView: ContentView(store: Store(initialValue: AppState(), reducer: appReducer)).frame(width: 392.0, height: 740))
+PlaygroundPage.current.liveView = UIHostingController(rootView: ContentView(store: Store(initialValue: AppState(), reducer: activityFeed(appReducer))).frame(width: 392.0, height: 740))
