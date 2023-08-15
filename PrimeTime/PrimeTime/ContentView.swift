@@ -6,6 +6,10 @@
 //
 import SwiftUI
 import Combine
+import ComposableArchitecture
+import FavoritePrimes
+import Counter
+import PrimeModal
 
 // Combine으로부터 분리 + 값 타입으로 만들기 위해 AppState를 class -> struct로 변경
 // 더 이상 @Published로 변수들을 선언하지 않아도 됨
@@ -37,55 +41,18 @@ struct AppState {
 }
 
 
-func logging<Value, Action>(
-  _ reducer: @escaping (inout Value, Action) -> Void
-) -> (inout Value, Action) -> Void {
-  return { value, action in
-    reducer(&value, action)
-    print("Action: \(action)")
-    print("State:")
-    dump(value)
-    print("---")
-  }
-}
 
 
-// Store 클래스의 역할: 값 유형을 래핑해서 관찰자에게 훅 제공
-// AppState에 대해서는 알 필요가 없기 떄문에 제네릭 타입으로 선언
-final class Store<Value, Action>: ObservableObject {
-    let reducer: (inout Value, Action) -> Void
-    @Published var value: Value
-    
-    init(initialValue: Value, reducer: @escaping (inout Value, Action) -> Void) {
-      self.value = initialValue
-      self.reducer = reducer
-    }
-    
-    func send(_ action: Action) {
-        self.reducer(&self.value, action)
-        print("Action: \(action)")
-        print("Value:")
-        dump(self.value)
-        print("---")
-    }
-}
+
+
 // Store<AppState>
 // AppState에 변경이 발생하는 즉시 무언가 변경되었음을 알려주는 객체
 
 
 
 // 사용자 액션 타입 지정
-enum CounterAction {
-    case decrementTapped
-    case incrementTapped
-}
-enum PrimeModalAction {
-    case saveFavoritePrimeTapped
-    case removeFavoritePrimeTapped
-}
-enum FavoritePrimesAction {
-    case deleteFavoritePrimes(IndexSet)
-}
+
+
 enum AppAction {
     case counter(CounterAction)
     case primeModal(PrimeModalAction)
@@ -163,27 +130,9 @@ let someAction = AppAction.counter(.incrementTapped)
 
 // 만약 CounterAction 열거형에 새로운 액션을 추가하는 경우 default문 때문에 컴파일러 오류가 발생하지 않고, reducer에 해당하는 액션이 자동으로 무시됨 -> .counter 액션을 먼저 추출, action: AppAction -> CounterAction)
 
-func counterReducer(state: inout Int, action: CounterAction) -> Void {
-    switch action {
-    case .decrementTapped:
-        state -= 1
-        
-    case .incrementTapped:
-        state += 1
-    }
-}
 
 
 
-func primeModalReducer(state: inout AppState, action: PrimeModalAction) -> Void {
-    switch action {
-    case .saveFavoritePrimeTapped:
-        state.favoritePrimes.append(state.count)
-        
-    case .removeFavoritePrimeTapped:
-        state.favoritePrimes.removeAll(where: { $0 == state.count })
-    }
-}
 
 
 //struct FavoritePrimesState {
@@ -192,26 +141,10 @@ func primeModalReducer(state: inout AppState, action: PrimeModalAction) -> Void 
 //}
 
 
-func favoritePrimesReducer(state: inout [Int], action: FavoritePrimesAction) {
-    switch action {
-    case let .deleteFavoritePrimes(indexSet):
-        for index in indexSet {
-            state.remove(at: index)
-        }
-    }
-}
 
 
-func combine<Value, Action>(
-    _ reducers: (inout Value, Action) -> Void...
-) -> (inout Value, Action) -> Void {
-    
-    return { value, action in
-        for reducer in reducers {
-            reducer(&value, action)
-        }
-    }
-}
+
+
 
 
 // pullback 정의
@@ -232,19 +165,7 @@ func pullback<LocalValue, GlobalValue, Action>(
 }
 */
 
-/* =========== < After action pullback > =========== */
-// Global action이 들어올 때 key path를 사용하여 Local Action을 추출하려고 시도
-// -> 성공: reducer로 전달, 실패: 아무것도 안 함
-func pullback<GlobalValue, LocalValue, GlobalAction, LocalAction>(
-    _ reducer: @escaping (inout LocalValue, LocalAction) -> Void,
-    value: WritableKeyPath<GlobalValue, LocalValue>,
-    action: WritableKeyPath<GlobalAction, LocalAction?>
-) -> (inout GlobalValue, GlobalAction) -> Void {
-    return { globalValue, globalAction in
-        guard let localAction = globalAction[keyPath: action] else { return }
-        reducer(&globalValue[keyPath: value], localAction)
-    }
-}
+
 
 //extension AppState {
 //    var favoritePrimesState: FavoritePrimesState {
@@ -308,9 +229,25 @@ func activityFeed(
 }
 
 
+extension AppState {
+    var primeModal: PrimeModalState {
+        get {
+            PrimeModalState(
+                count: self.count,
+                favoritePrimes: self.favoritePrimes
+            )
+        }
+        set {
+            self.count = newValue.count
+            self.favoritePrimes = newValue.favoritePrimes
+        }
+    }
+}
+    
+
 let _appReducer: (inout AppState, AppAction) -> Void = combine(
     pullback(counterReducer, value: \.count, action: \.counter),
-    pullback(primeModalReducer, value: \.self, action: \.primeModal),
+    pullback(primeModalReducer, value: \.primeModal, action: \.primeModal),
     pullback(favoritePrimesReducer, value: \.favoritePrimes, action: \.favoritePrimes)
 )
 let appReducer = pullback(_appReducer, value: \.self, action: \.self)
