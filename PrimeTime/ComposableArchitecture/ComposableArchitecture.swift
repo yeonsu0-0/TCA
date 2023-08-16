@@ -11,7 +11,9 @@
 // AppState에 대해서는 알 필요가 없기 떄문에 제네릭 타입으로 선언
 public final class Store<Value, Action>: ObservableObject {
     private let reducer: (inout Value, Action) -> Void
-    @Published public var value: Value
+    // store의 값을 얻는 방법: 프로퍼티를 통해서!
+    // value값이 private setter로 되어있기 때문에 모듈 밖에서는 값을 가져오는 것 외에는 아무것도 할 수 없음
+    @Published public private(set) var value: Value
     
     public init(initialValue: Value, reducer: @escaping (inout Value, Action) -> Void) {
       self.value = initialValue
@@ -25,8 +27,27 @@ public final class Store<Value, Action>: ObservableObject {
         dump(self.value)
         print("---")
     }
+    
+    // store에 자동으로 변환을 적용하여 appState의 값 중에서 일부만 가져오도록 하는 메서드
+    func ___<LocalValue>(
+        _ f: @escaping (Value) -> LocalValue
+    ) -> Store<LocalValue, Action> {
+        return Store<LocalValue, Action>(
+            initialValue: f(self.value),
+            reducer: { localValue, action in
+                self.send(action)
+                localValue = f(self.value)
+            }
+        )
+    }
 }
 
+func transform<A, B, Action>(
+  _ reducer: (inout A, Action) -> Void,
+  _ f: (A) -> B
+) -> (inout B, Action) -> Void {
+  fatalError()
+}
 
 public func combine<Value, Action>(
     _ reducers: (inout Value, Action) -> Void...
