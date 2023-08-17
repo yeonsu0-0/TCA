@@ -338,12 +338,16 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             List{
-                NavigationLink(destination: CounterView(store: self.store)) {
-                    Text("Counter demo")
-                }
+                NavigationLink(
+                  "Counter demo",
+                  destination: CounterView(
+                    store: self.store
+                      .view { ($0.count, $0.favoritePrimes) }
+                  )
+                )
                 NavigationLink(
                     destination: FavoritePrimesView(
-                        store: self.store,
+                        store: self.store.view { $0.favoritePrimes },
                         favoritePrimes: self.$store.value.favoritePrimes,
                         activityFeed: self.$store.value.activityFeed
                     )
@@ -357,13 +361,14 @@ struct ContentView: View {
 }
 
 
+typealias CounterViewState = (count: Int, favoritePrimes: [Int])
 struct CounterView: View {
     // @State var count: Int = 0
     // @State: 상태가 업데이트 될 때마다 뷰 랜더링
     // 화면이 바뀌면(뒤로 가거나 다른 화면으로 넘어갈 때)상태가 저장되지 않음
     
     // @ObservedObject(AppState 클래스에서 ObservableObject 프로토콜 채택해야 함)
-    @ObservedObject var store: Store<AppState, AppAction>
+    @ObservedObject var store: Store<CounterViewState, AppAction>
     // 모달 상태 추적(로컬)
     @State var isPrimeModalShown: Bool = false
     @State var alertNthPrime: Int?
@@ -407,7 +412,9 @@ struct CounterView: View {
         .sheet(isPresented: $isPrimeModalShown, onDismiss: {
             self.isPrimeModalShown = false
         }) {
-            IsPrimeModalView(store: self.store)
+            IsPrimeModalView(
+                store: self.store.view { ($0.count, $0.favoritePrimes) }
+            )
         }
         .alert(isPresented: $isAlertShown) {
             Alert(title: Text("The \(ordinal(self.store.value.count)) prime is API 대체"))
@@ -424,7 +431,7 @@ struct CounterView: View {
 }
 
 struct IsPrimeModalView: View {
-    @ObservedObject var store: Store<AppState, AppAction>
+    @ObservedObject var store: Store<PrimeModalState, AppAction>
     var body: some View {
         VStack {
             if isPrime(self.store.value.count) {
@@ -449,13 +456,13 @@ struct IsPrimeModalView: View {
 
 
 struct FavoritePrimesView: View {
-    @ObservedObject var store: Store<AppState, AppAction>
+    @ObservedObject var store: Store<[Int], AppAction>
     @Binding var favoritePrimes: [Int]
     @Binding var activityFeed: [AppState.Activity]
     
     var body: some View {
         List {
-            ForEach(self.store.value.favoritePrimes, id: \.self) { prime in
+            ForEach(self.store.value, id: \.self) { prime in
                 Text("\(prime)")
             }.onDelete { indexSet in
                 self.store.send(.favoritePrimes(.deleteFavoritePrimes(indexSet)))
@@ -486,6 +493,7 @@ extension AppState {
         }
     }
 }
+
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {

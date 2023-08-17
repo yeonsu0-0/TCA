@@ -5,7 +5,7 @@
 //  Created by yeonsu on 2023/08/15.
 //
 
-
+import Combine
 
 // Store 클래스의 역할: 값 유형을 래핑해서 관찰자에게 훅 제공
 // AppState에 대해서는 알 필요가 없기 떄문에 제네릭 타입으로 선언
@@ -13,7 +13,8 @@ public final class Store<Value, Action>: ObservableObject {
     private let reducer: (inout Value, Action) -> Void
     // store의 값을 얻는 방법: 프로퍼티를 통해서!
     // value값이 private setter로 되어있기 때문에 모듈 밖에서는 값을 가져오는 것 외에는 아무것도 할 수 없음
-    @Published public private(set) var value: Value
+    @Published public var value: Value
+    private var cancellable: Cancellable?
     
     public init(initialValue: Value, reducer: @escaping (inout Value, Action) -> Void) {
       self.value = initialValue
@@ -28,17 +29,26 @@ public final class Store<Value, Action>: ObservableObject {
         print("---")
     }
     
+    
     // store에 자동으로 변환을 적용하여 appState의 값 중에서 일부만 가져오도록 하는 메서드
-    func ___<LocalValue>(
+    // ((Value) -> LocalValue) -> ((Store<Value, _>) -> Store<LocalValue, _>
+    // ((A) -> B) -> ((Store<A, _>) -> Store<B, _>)
+    // map: ((A) -> B) -> ((F<A>) -> F<B>)
+    
+    public func view<LocalValue>(
         _ f: @escaping (Value) -> LocalValue
     ) -> Store<LocalValue, Action> {
-        return Store<LocalValue, Action>(
+        let localStore = Store<LocalValue, Action>(
             initialValue: f(self.value),
             reducer: { localValue, action in
                 self.send(action)
                 localValue = f(self.value)
             }
         )
+        localStore.cancellable = self.$value.sink { [weak localStore] newValue in
+            localStore?.value = f(newValue)
+        }
+        return localStore
     }
 }
 
