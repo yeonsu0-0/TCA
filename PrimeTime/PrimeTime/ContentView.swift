@@ -339,17 +339,18 @@ struct ContentView: View {
         NavigationView {
             List{
                 NavigationLink(
-                  "Counter demo",
-                  destination: CounterView(
-                    store: self.store
-                      .view { ($0.count, $0.favoritePrimes) }
-                  )
+                    "Counter demo",
+                    destination: CounterView(
+                        store: self.store.view(value: { ($0.count, $0.favoritePrimes)}, action: { $0 }
+                                              )
+                    )
                 )
                 NavigationLink(
                     destination: FavoritePrimesView(
-                        store: self.store.view { $0.favoritePrimes },
-                        favoritePrimes: self.$store.value.favoritePrimes,
-                        activityFeed: self.$store.value.activityFeed
+                        store: self.store.view(
+                              value: { $0.favoritePrimes },
+                              action: { AppAction.favoritePrimes($0) }
+                            )
                     )
                 ) {
                     Text("Favorite primes")
@@ -413,7 +414,10 @@ struct CounterView: View {
             self.isPrimeModalShown = false
         }) {
             IsPrimeModalView(
-                store: self.store.view { ($0.count, $0.favoritePrimes) }
+                store: self.store .view(
+                    value: { ($0.count, $0.favoritePrimes) },
+                    action: { $0 }
+                )
             )
         }
         .alert(isPresented: $isAlertShown) {
@@ -453,24 +457,6 @@ struct IsPrimeModalView: View {
     }
 }
 
-
-
-struct FavoritePrimesView: View {
-    @ObservedObject var store: Store<[Int], AppAction>
-    @Binding var favoritePrimes: [Int]
-    @Binding var activityFeed: [AppState.Activity]
-    
-    var body: some View {
-        List {
-            ForEach(self.store.value, id: \.self) { prime in
-                Text("\(prime)")
-            }.onDelete { indexSet in
-                self.store.send(.favoritePrimes(.deleteFavoritePrimes(indexSet)))
-            }
-        }
-        .navigationBarTitle(Text("Favorite Primes"))
-    }
-}
 
 extension AppState {
     mutating func addFavoritePrime() {
