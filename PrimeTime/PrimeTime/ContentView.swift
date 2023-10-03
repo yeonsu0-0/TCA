@@ -349,7 +349,7 @@ struct ContentView: View {
                     destination: FavoritePrimesView(
                         store: self.store.view(
                               value: { $0.favoritePrimes },
-                              action: { AppAction.favoritePrimes($0) }
+                              action: { .favoritePrimes($0) }
                             )
                     )
                 ) {
@@ -416,7 +416,7 @@ struct CounterView: View {
             IsPrimeModalView(
                 store: self.store .view(
                     value: { ($0.count, $0.favoritePrimes) },
-                    action: { $0 }
+                    action: { .primeModal($0) }
                 )
             )
         }
@@ -430,29 +430,6 @@ struct CounterView: View {
             self.alertNthPrime = prime
             self.isAlertShown = true
             self.isNthPrimeButtonDisabled = false
-        }
-    }
-}
-
-struct IsPrimeModalView: View {
-    @ObservedObject var store: Store<PrimeModalState, AppAction>
-    var body: some View {
-        VStack {
-            if isPrime(self.store.value.count) {
-                Text("\(self.store.value.count) is prime😻")
-                if self.store.value.favoritePrimes.contains(self.store.value.count) {
-                    Button("Remove to/from favorite primes") {
-                        self.store.send(.primeModal(.removeFavoritePrimeTapped))
-                    }
-                } else {
-                    Button("Save to favorite primes") {
-                        self.store.send(.primeModal(.saveFavoritePrimeTapped))
-                        }
-                }
-            } else {
-                Text("\(self.store.value.count) is not prime👻")
-            }
-            
         }
     }
 }
